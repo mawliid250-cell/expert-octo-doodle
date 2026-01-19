@@ -1,0 +1,853 @@
+import React, { useState } from 'react';
+import { ArrowRight, ArrowLeft, Book, Code, List, Grid, Wand2, Search, Download, AlertCircle } from 'lucide-react';
+
+const GermanWordCodec = () => {
+  const [word, setWord] = useState('');
+  const [result, setResult] = useState(null);
+  const [batchInput, setBatchInput] = useState('');
+  const [batchResults, setBatchResults] = useState([]);
+  const [activeTab, setActiveTab] = useState('single');
+  const [searchQuery, setSearchQuery] = useState({ p0: '', p1: '', p2: '', p3: '' });
+  const [searchResults, setSearchResults] = useState([]);
+
+  // ERWEITERUNG 2: Unregelmäßige Verben Datenbank
+  const IRREGULAR_VERBS = {
+    'geb': { vowelChange: { praesens: 'i', praeteritum: 'a', partizip: 'e' }, stem: 'geb' },
+    'nehm': { vowelChange: { praesens: 'i', praeteritum: 'a', partizip: 'o' }, stem: 'nehm' },
+    'seh': { vowelChange: { praesens: 'ie', praeteritum: 'a', partizip: 'e' }, stem: 'seh' },
+    'les': { vowelChange: { praesens: 'ie', praeteritum: 'a', partizip: 'e' }, stem: 'les' },
+    'sprech': { vowelChange: { praesens: 'i', praeteritum: 'a', partizip: 'o' }, stem: 'sprech' },
+    'helf': { vowelChange: { praesens: 'i', praeteritum: 'a', partizip: 'o' }, stem: 'helf' },
+    'trag': { vowelChange: { praesens: 'ä', praeteritum: 'u', partizip: 'a' }, stem: 'trag' },
+    'fahr': { vowelChange: { praesens: 'ä', praeteritum: 'u', partizip: 'a' }, stem: 'fahr' },
+    'lauf': { vowelChange: { praesens: 'äu', praeteritum: 'ie', partizip: 'au' }, stem: 'lauf' }
+  };
+
+  const PREFIXES = {
+    0: '∅', 1: 'be', 2: 'ge', 3: 'er', 4: 'ver', 5: 'ent', 
+    6: 'zer', 7: 'un', 8: 'miss', 9: 'ab', 10: 'an'
+  };
+
+  const P1_SINGLE = ['b', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'm', 'n', 'p', 'r', 's', 't', 'v', 'w', 'x', 'z', 'ß', 'ch', 'sch'];
+  const P1_DOUBLE = ['bl', 'br', 'dr', 'fl', 'fr', 'gl', 'gr', 'kl', 'kn', 'kr', 'pl', 'pr', 'schl', 'schm', 'schn', 'schr', 'schw', 'sp', 'st', 'sw', 'tr', 'zw'];
+  const P1_TRIPLE = ['spr', 'str', 'spl'];
+  const P1_ALL = ['∅', ...P1_SINGLE, ...P1_DOUBLE, ...P1_TRIPLE];
+
+  const VOWELS_SHORT = ['a', 'e', 'i', 'o', 'u', 'ä', 'ö', 'ü'];
+  const VOWELS_LONG_MARKERS = ['aa', 'ah', 'ee', 'eh', 'ie', 'ih', 'oo', 'oh', 'uu', 'uh', 'äh', 'öh', 'üh'];
+  const DIPHTHONGS = ['ei', 'ai', 'au', 'eu', 'äu', 'oi', 'ui'];
+
+  const CONSONANT_CLUSTERS = ['ch', 'sch', 'ck', 'ng', 'nk', 'st', 'nd', 'nt', 'rt', 'rn', 'rk', 'hl', 'hr', 'hn', 'lm', 'ln', 'lt', 'mp', 'nf', 'pf', 'tz'];
+  const SINGLE_CONSONANTS = ['b', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'm', 'n', 'p', 'r', 's', 't', 'v', 'w', 'x', 'z', 'ß'];
+
+  const P3_ENDINGS = {
+    0: '∅', 1: 'e', 2: 't', 3: 'n', 4: 's', 5: 'r',
+    10: 'en', 11: 'er', 12: 'es', 13: 'em', 14: 'st', 15: 'nd', 16: 'te', 17: 'et',
+    20: 'ung', 21: 'end', 22: 'ist', 23: 'ich', 24: 'ten', 25: 'ter', 26: 'ste',
+    30: 'lich', 31: 'isch', 32: 'ling', 33: 'heit', 34: 'tsch', 35: 'est',
+    40: 'schaft', 41: 'igkeit', 42: 'lichen', 43: 'ungen'
+  };
+
+  // ERWEITERUNG 1: Komposita-Zerlegung
+  const decomposeCompound = (word) => {
+    const commonParts = [
+      'haus', 'bahn', 'schule', 'kühl', 'schrank', 'wasser', 'kraft',
+      'werk', 'tag', 'nacht', 'heim', 'land', 'buch', 'hand', 'fuß',
+      'kopf', 'herz', 'leben', 'zeit', 'raum', 'platz', 'weg', 'stoff',
+      'arbeit', 'sache', 'teil', 'mann', 'frau', 'kind', 'jahr', 'tag'
+    ];
+
+    const w = word.toLowerCase();
+    const parts = [];
+
+    // Versuche Wort in bekannte Teile zu zerlegen
+    let remaining = w;
+    let attempts = 0;
+    const maxAttempts = 5;
+
+    while (remaining.length > 0 && attempts < maxAttempts) {
+      let found = false;
+      
+      // Suche längste Übereinstimmung von Anfang
+      for (let len = Math.min(remaining.length, 12); len >= 3; len--) {
+        const candidate = remaining.slice(0, len);
+        if (commonParts.includes(candidate)) {
+          parts.push(candidate);
+          remaining = remaining.slice(len);
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) {
+        // Wenn nichts gefunden, nehme nächste 4-6 Zeichen als Teil
+        const len = Math.min(remaining.length, 5);
+        parts.push(remaining.slice(0, len));
+        remaining = remaining.slice(len);
+      }
+      
+      attempts++;
+    }
+
+    if (remaining.length > 0) {
+      parts.push(remaining);
+    }
+
+    return parts.length > 1 ? parts : null;
+  };
+
+  const encodeWord = (inputWord) => {
+    const w = inputWord.toLowerCase().trim();
+    if (!w) return null;
+
+    // ERWEITERUNG 1: Prüfe auf Kompositum
+    const compound = decomposeCompound(w);
+    if (compound) {
+      const encodedParts = compound.map(part => encodeWord(part));
+      return {
+        isCompound: true,
+        word: w,
+        parts: compound,
+        encodedParts: encodedParts.filter(e => e && !e.error),
+        structure: encodedParts[0]?.structure
+      };
+    }
+
+    let p0 = '∅', p0Code = 0;
+    let remaining = w;
+
+    // Find P0 (Prefix)
+    const prefixEntries = Object.entries(PREFIXES).sort((a, b) => b[1].length - a[1].length);
+    for (const [code, prefix] of prefixEntries) {
+      if (prefix !== '∅' && remaining.startsWith(prefix)) {
+        p0 = prefix;
+        p0Code = parseInt(code);
+        remaining = remaining.slice(prefix.length);
+        break;
+      }
+    }
+
+    // Find P1
+    let p1 = '∅', p1Code = 0;
+    for (let i = P1_ALL.length - 1; i >= 1; i--) {
+      const pattern = P1_ALL[i];
+      if (remaining.startsWith(pattern)) {
+        p1 = pattern;
+        p1Code = i;
+        remaining = remaining.slice(pattern.length);
+        break;
+      }
+    }
+
+    // Find Vowel
+    let vowel = '', vowelCode = -1, isLong = false;
+    
+    for (let i = 0; i < DIPHTHONGS.length; i++) {
+      if (remaining.startsWith(DIPHTHONGS[i])) {
+        vowel = DIPHTHONGS[i];
+        vowelCode = 200 + i;
+        remaining = remaining.slice(DIPHTHONGS[i].length);
+        break;
+      }
+    }
+
+    if (!vowel) {
+      for (let i = 0; i < VOWELS_LONG_MARKERS.length; i++) {
+        if (remaining.startsWith(VOWELS_LONG_MARKERS[i])) {
+          vowel = VOWELS_LONG_MARKERS[i];
+          vowelCode = 100 + i;
+          isLong = true;
+          remaining = remaining.slice(VOWELS_LONG_MARKERS[i].length);
+          break;
+        }
+      }
+    }
+
+    if (!vowel) {
+      for (let i = 0; i < VOWELS_SHORT.length; i++) {
+        if (remaining.startsWith(VOWELS_SHORT[i])) {
+          vowel = VOWELS_SHORT[i];
+          vowelCode = i;
+          remaining = remaining.slice(1);
+          break;
+        }
+      }
+    }
+
+    if (!vowel) {
+      return { error: 'Kein Vokal gefunden', word: w };
+    }
+
+    // Find P3
+    let p3 = '', p3Code = 0, p2End = remaining;
+    const endingKeys = Object.keys(P3_ENDINGS).map(Number).sort((a, b) => 
+      P3_ENDINGS[b].length - P3_ENDINGS[a].length
+    );
+
+    for (const key of endingKeys) {
+      const ending = P3_ENDINGS[key];
+      if (ending === '∅') continue;
+      if (remaining.endsWith(ending)) {
+        p3 = ending;
+        p3Code = key;
+        p2End = remaining.slice(0, -ending.length);
+        break;
+      }
+    }
+
+    if (!p3 && remaining) {
+      p3 = '∅';
+      p3Code = 0;
+      p2End = remaining;
+    }
+
+    // Analyze P2 consonants
+    let p2Consonants = [];
+    let p2ConsonantCodes = [];
+    let temp = p2End;
+    
+    while (temp.length > 0) {
+      let found = false;
+      for (const cluster of CONSONANT_CLUSTERS) {
+        if (temp.startsWith(cluster)) {
+          p2Consonants.push(cluster);
+          p2ConsonantCodes.push(CONSONANT_CLUSTERS.indexOf(cluster) + 100);
+          temp = temp.slice(cluster.length);
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        for (const cons of SINGLE_CONSONANTS) {
+          if (temp.startsWith(cons)) {
+            p2Consonants.push(cons);
+            p2ConsonantCodes.push(SINGLE_CONSONANTS.indexOf(cons));
+            temp = temp.slice(1);
+            found = true;
+            break;
+          }
+        }
+      }
+      if (!found) break;
+    }
+
+    const p2Structure = p2Consonants.length > 0 ? p2Consonants.join('+') : '∅';
+
+    // ERWEITERUNG 2: Prüfe auf unregelmäßiges Verb
+    const stemKey = p1 + vowel + p2End;
+    const irregularInfo = IRREGULAR_VERBS[stemKey] || IRREGULAR_VERBS[p2End] || null;
+
+    return {
+      word: w,
+      structure: {
+        p0: { value: p0, code: p0Code },
+        p1: { value: p1, code: p1Code },
+        p2: { 
+          vowel: { value: vowel, code: vowelCode, long: isLong || vowelCode >= 100 },
+          consonants: p2Consonants,
+          consonantCodes: p2ConsonantCodes,
+          structure: p2Structure
+        },
+        p3: { value: p3 || '∅', code: p3Code }
+      },
+      irregular: irregularInfo,
+      algebraic: `W = P₀.${p0Code}(${p0}) + P₁.${p1Code}(${p1}) + P₂[V.${vowelCode}(${vowel})+C(${p2Structure})] + P₃.${p3Code}(${p3 || '∅'})`,
+      compact: `[${p0Code}, ${p1Code}, ${vowelCode}, [${p2ConsonantCodes.join(',')}], ${p3Code}]`,
+      breakdown: `${p0 !== '∅' ? p0 + '-' : ''}${p1 !== '∅' ? p1 + '-' : ''}${vowel}${p2End ? '-' + p2End : ''}${p3 !== '∅' ? '-' + p3 : ''}`,
+      ipa: generateIPA(p0, p1, vowel, p2Consonants, p3)
+    };
+  };
+
+  const generateIPA = (p0, p1, vowel, p2cons, p3) => {
+    const ipaMap = {
+      'a': 'a', 'e': 'ɛ', 'i': 'ɪ', 'o': 'ɔ', 'u': 'ʊ',
+      'ä': 'ɛ', 'ö': 'œ', 'ü': 'ʏ',
+      'aa': 'aː', 'ah': 'aː', 'ee': 'eː', 'eh': 'eː', 'ie': 'iː',
+      'oo': 'oː', 'oh': 'oː', 'uu': 'uː', 'uh': 'uː',
+      'ei': 'aɪ', 'au': 'aʊ', 'eu': 'ɔʏ', 'äu': 'ɔʏ',
+      'ch': 'ç', 'sch': 'ʃ', 'ng': 'ŋ', 'ck': 'k',
+      'ver': 'fɛʁ', 'be': 'bə', 'ge': 'ɡə'
+    };
+    
+    let ipa = '/';
+    if (p0 !== '∅') ipa += (ipaMap[p0] || p0);
+    if (p1 !== '∅') ipa += (ipaMap[p1] || p1);
+    ipa += (ipaMap[vowel] || vowel);
+    p2cons.forEach(c => ipa += (ipaMap[c] || c));
+    if (p3 !== '∅') ipa += (ipaMap[p3] || p3);
+    ipa += '/';
+    return ipa;
+  };
+
+  // ERWEITERUNG 2: Erweiterte Varianten mit unregelmäßigen Verben
+  const generateVariants = (stem) => {
+    const encoded = encodeWord(stem);
+    if (!encoded || encoded.error) return null;
+
+    const { p0, p1, p2 } = encoded.structure;
+    const stemCore = `${p1.value}${p2.vowel.value}${p2.structure !== '∅' ? p2.consonants.join('') : ''}`;
+    
+    const irregular = encoded.irregular;
+    
+    let variants = [];
+
+    if (irregular) {
+      // Unregelmäßige Konjugation
+      const praesensVowel = irregular.vowelChange.praesens;
+      const praeteritumVowel = irregular.vowelChange.praeteritum;
+      
+      variants = [
+        { form: 'Stamm', word: stemCore, ending: '∅', code: 0, note: 'Grundform' },
+        { form: 'ich (1.Sg)', word: stemCore + 'e', ending: 'e', code: 1 },
+        { form: 'du (2.Sg)', word: `${p1.value}${praesensVowel}${p2.consonants.join('')}st`, ending: 'st', code: 14, note: `Vokalwechsel: ${p2.vowel.value}→${praesensVowel}` },
+        { form: 'er/sie/es (3.Sg)', word: `${p1.value}${praesensVowel}${p2.consonants.join('')}t`, ending: 't', code: 2, note: `Vokalwechsel: ${p2.vowel.value}→${praesensVowel}` },
+        { form: 'wir (1.Pl)', word: stemCore + 'en', ending: 'en', code: 10 },
+        { form: 'Infinitiv', word: stemCore + 'en', ending: 'en', code: 10 },
+        { form: 'Präteritum ich', word: `${p1.value}${praeteritumVowel}${p2.consonants.join('')}`, ending: '∅', code: 0, note: `Vokalwechsel: ${p2.vowel.value}→${praeteritumVowel}` },
+        { form: 'Partizip II', word: `ge${stemCore}en`, ending: 'en', code: 10, note: 'mit ge-' }
+      ];
+    } else {
+      // Regelmäßige Konjugation
+      variants = [
+        { form: 'Stamm', word: stemCore, ending: '∅', code: 0 },
+        { form: 'ich (1.Sg)', word: stemCore + 'e', ending: 'e', code: 1 },
+        { form: 'du (2.Sg)', word: stemCore + 'st', ending: 'st', code: 14 },
+        { form: 'er/sie/es (3.Sg)', word: stemCore + 't', ending: 't', code: 2 },
+        { form: 'wir (1.Pl)', word: stemCore + 'en', ending: 'en', code: 10 },
+        { form: 'Infinitiv', word: stemCore + 'en', ending: 'en', code: 10 },
+        { form: 'Partizip I', word: stemCore + 'end', ending: 'end', code: 21 },
+        { form: 'Nomen (-er)', word: stemCore.charAt(0).toUpperCase() + stemCore.slice(1) + 'er', ending: 'er', code: 11 },
+        { form: 'Nomen (-ung)', word: stemCore.charAt(0).toUpperCase() + stemCore.slice(1) + 'ung', ending: 'ung', code: 20 }
+      ];
+    }
+
+    return { stem: stemCore, variants, baseCode: encoded.compact, irregular: !!irregular };
+  };
+
+  const processBatch = () => {
+    const words = batchInput.split('\n').filter(w => w.trim());
+    const results = words.map(w => {
+      const encoded = encodeWord(w.trim());
+      return encoded && !encoded.error ? encoded : { word: w, error: 'Fehler' };
+    });
+    setBatchResults(results);
+  };
+
+  // ERWEITERUNG 4: Suchfunktion
+  const performSearch = () => {
+    // Simulierte Wörterbuch-Daten
+    const dictionary = [
+      { word: 'geben', codes: [0, 4, 1, [1], 10] },
+      { word: 'vergeben', codes: [4, 4, 1, [1], 10] },
+      { word: 'ausgeben', codes: [0, 4, 1, [1], 10] },
+      { word: 'abgeben', codes: [9, 4, 1, [1], 10] },
+      { word: 'nehmen', codes: [0, 9, 1, [5, 9], 10] },
+      { word: 'lernen', codes: [0, 8, 1, [12, 9], 10] },
+      { word: 'verlernen', codes: [4, 8, 1, [12, 9], 10] },
+      { word: 'kühl', codes: [0, 7, 107, [5, 8], 0] },
+      { word: 'kühlen', codes: [0, 7, 107, [5, 8], 10] },
+      { word: 'Kühlung', codes: [0, 7, 107, [5, 8], 20] },
+      { word: 'tisch', codes: [0, 14, 2, [0, 19], 0] },
+      { word: 'schön', codes: [0, 21, 6, [9], 0] }
+    ];
+
+    const filtered = dictionary.filter(item => {
+      const [p0, p1, p2, p2cons, p3] = item.codes;
+      
+      if (searchQuery.p0 !== '' && p0 !== parseInt(searchQuery.p0)) return false;
+      if (searchQuery.p1 !== '' && p1 !== parseInt(searchQuery.p1)) return false;
+      if (searchQuery.p2 !== '' && p2 !== parseInt(searchQuery.p2)) return false;
+      if (searchQuery.p3 !== '' && p3 !== parseInt(searchQuery.p3)) return false;
+      
+      return true;
+    });
+
+    setSearchResults(filtered);
+  };
+
+  // ERWEITERUNG 3: Export-Funktionen
+  const exportToCSV = () => {
+    if (batchResults.length === 0) return;
+
+    const headers = ['Wort', 'P0', 'P1', 'P2_Vokal', 'P2_Konsonanten', 'P3', 'Kompakt-Code', 'IPA'];
+    const rows = batchResults.map(r => {
+      if (r.error) return [r.word, 'ERROR', '', '', '', '', '', ''];
+      return [
+        r.word,
+        r.structure.p0.code,
+        r.structure.p1.code,
+        r.structure.p2.vowel.code,
+        r.structure.p2.consonantCodes.join('+'),
+        r.structure.p3.code,
+        r.compact,
+        r.ipa
+      ];
+    });
+
+    const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'wortanalyse.csv';
+    a.click();
+  };
+
+  const exportToJSON = () => {
+    if (batchResults.length === 0) return;
+
+    const json = JSON.stringify(batchResults, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'wortanalyse.json';
+    a.click();
+  };
+
+  const examples = [
+    { word: 'geben', note: 'unregelmäßig' },
+    { word: 'kühlschrank', note: 'Kompositum' },
+    { word: 'vergeben', note: 'mit Präfix' },
+    { word: 'lernen', note: 'regelmäßig' }
+  ];
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-4">
+      <div className="max-w-6xl mx-auto">
+        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 shadow-2xl border border-white/20">
+          <div className="flex items-center gap-3 mb-6">
+            <Code className="w-8 h-8 text-blue-300" />
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold text-white">
+                Deutscher Wort-Codec PRO+
+              </h1>
+              <p className="text-white/60 text-sm">Mit Komposita, Unregelmäßigen Verben, Export & Suche</p>
+            </div>
+          </div>
+
+          {/* Tab Navigation */}
+          <div className="flex flex-wrap gap-2 mb-6">
+            <button onClick={() => setActiveTab('single')} className={`px-4 py-2 rounded-lg transition-all ${activeTab === 'single' ? 'bg-blue-500 text-white' : 'bg-white/10 text-white/70'}`}>
+              <div className="flex items-center gap-2"><Code className="w-4 h-4" />Analyse</div>
+            </button>
+            <button onClick={() => setActiveTab('batch')} className={`px-4 py-2 rounded-lg transition-all ${activeTab === 'batch' ? 'bg-blue-500 text-white' : 'bg-white/10 text-white/70'}`}>
+              <div className="flex items-center gap-2"><List className="w-4 h-4" />Batch</div>
+            </button>
+            <button onClick={() => setActiveTab('variants')} className={`px-4 py-2 rounded-lg transition-all ${activeTab === 'variants' ? 'bg-blue-500 text-white' : 'bg-white/10 text-white/70'}`}>
+              <div className="flex items-center gap-2"><Wand2 className="w-4 h-4" />Varianten</div>
+            </button>
+            <button onClick={() => setActiveTab('search')} className={`px-4 py-2 rounded-lg transition-all ${activeTab === 'search' ? 'bg-blue-500 text-white' : 'bg-white/10 text-white/70'}`}>
+              <div className="flex items-center gap-2"><Search className="w-4 h-4" />Suche</div>
+            </button>
+          </div>
+
+          {/* Single Word Analysis */}
+          {activeTab === 'single' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-white/90 font-medium mb-2">Deutsches Wort:</label>
+                <input
+                  type="text"
+                  value={word}
+                  onChange={(e) => setWord(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && setResult(encodeWord(word))}
+                  placeholder="z.B. kühlschrank, vergeben, geben..."
+                  className="w-full px-4 py-3 bg-white/10 border border-white/30 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+              <button onClick={() => setResult(encodeWord(word))} className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 rounded-lg transition-all">
+                Analysieren
+              </button>
+
+              {result && result.isCompound && (
+                <div className="mt-6 space-y-4">
+                  <div className="bg-gradient-to-r from-green-500/20 to-blue-500/20 p-4 rounded-lg border border-green-500/50">
+                    <div className="flex items-center gap-2 mb-3">
+                      <AlertCircle className="w-5 h-5 text-green-300" />
+                      <h3 className="text-white font-semibold">Kompositum erkannt!</h3>
+                    </div>
+                    <div className="text-white/90 mb-2">
+                      <span className="font-medium">{result.word}</span> besteht aus {result.parts.length} Teilen:
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {result.parts.map((part, i) => (
+                        <div key={i} className="bg-white/10 px-3 py-1 rounded text-blue-300 font-medium">
+                          {part}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 space-y-2">
+                      {result.encodedParts.map((encoded, i) => (
+                        <div key={i} className="bg-white/5 p-3 rounded">
+                          <div className="text-white font-medium">{result.parts[i]}</div>
+                          <div className="text-cyan-300 text-sm font-mono">{encoded.compact}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {result && !result.error && !result.isCompound && (
+                <div className="mt-6 space-y-4">
+                  {result.irregular && (
+                    <div className="bg-yellow-500/20 border border-yellow-500/50 p-4 rounded-lg">
+                      <div className="flex items-center gap-2 mb-2">
+                        <AlertCircle className="w-5 h-5 text-yellow-300" />
+                        <h3 className="text-yellow-300 font-semibold">Unregelmäßiges Verb erkannt!</h3>
+                      </div>
+                      <div className="text-white/90 text-sm space-y-1">
+                        <div>Vokalwechsel Präsens: <span className="text-yellow-300 font-mono">{result.structure.p2.vowel.value} → {result.irregular.vowelChange.praesens}</span></div>
+                        <div>Vokalwechsel Präteritum: <span className="text-yellow-300 font-mono">{result.structure.p2.vowel.value} → {result.irregular.vowelChange.praeteritum}</span></div>
+                        <div>Vokalwechsel Partizip II: <span className="text-yellow-300 font-mono">{result.structure.p2.vowel.value} → {result.irregular.vowelChange.partizip}</span></div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="bg-gradient-to-r from-green-500/20 via-blue-500/20 to-purple-500/20 p-4 rounded-lg border border-white/20">
+                    <h3 className="text-white font-semibold mb-3">Visuelle Matrix:</h3>
+                    <div className="grid grid-cols-4 gap-2 text-center">
+                      <div className="bg-green-500/30 p-3 rounded">
+                        <div className="text-xs text-green-200">P₀ Präfix</div>
+                        <div className="text-xl font-bold text-white">{result.structure.p0.value}</div>
+                        <div className="text-xs text-green-200">Code: {result.structure.p0.code}</div>
+                      </div>
+                      <div className="bg-blue-500/30 p-3 rounded">
+                        <div className="text-xs text-blue-200">P₁ Anfang</div>
+                        <div className="text-xl font-bold text-white">{result.structure.p1.value}</div>
+                        <div className="text-xs text-blue-200">Code: {result.structure.p1.code}</div>
+                      </div>
+                      <div className="bg-yellow-500/30 p-3 rounded">
+                        <div className="text-xs text-yellow-200">P₂ Kern</div>
+                        <div className="text-lg font-bold text-white">
+                          {result.structure.p2.vowel.value}
+                          {result.structure.p2.vowel.long && <span className="text-xs">ː</span>}
+                          {result.structure.p2.structure !== '∅' && `+${result.structure.p2.structure}`}
+                        </div>
+                        <div className="text-xs text-yellow-200">V:{result.structure.p2.vowel.code}</div>
+                      </div>
+                      <div className="bg-purple-500/30 p-3 rounded">
+                        <div className="text-xs text-purple-200">P₃ Endung</div>
+                        <div className="text-xl font-bold text-white">{result.structure.p3.value}</div>
+                        <div className="text-xs text-purple-200">Code: {result.structure.p3.code}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white/5 p-4 rounded-lg border border-white/10">
+                    <h3 className="text-white font-semibold mb-2">P₂ Detail-Analyse:</h3>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-white/70">Vokal:</span>
+                        <span className="text-yellow-300 font-mono">
+                          {result.structure.p2.vowel.value} 
+                          {result.structure.p2.vowel.long ? ' (lang)' : ' (kurz)'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-white/70">Konsonanten-Cluster:</span>
+                        <span className="text-yellow-300 font-mono">{result.structure.p2.structure}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-white/70">Cluster-Codes:</span>
+                        <span className="text-yellow-300 font-mono">[{result.structure.p2.consonantCodes.join(', ')}]</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white/5 p-4 rounded-lg border border-white/10">
+                    <h3 className="text-white font-semibold mb-2">IPA-Transkription:</h3>
+                    <div className="text-2xl font-mono text-cyan-300">{result.ipa}</div>
+                  </div>
+
+                  <div className="bg-white/5 p-4 rounded-lg border border-white/10">
+                    <h3 className="text-white font-semibold mb-2">Kompakt-Code:</h3>
+                    <div className="font-mono text-lg text-green-300 bg-black/30 p-3 rounded">
+                      {result.compact}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {result && result.error && (
+                <div className="mt-6 p-4 bg-red-500/20 rounded-lg border border-red-500/50">
+                  <div className="text-red-300 font-medium">{result.error}</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Batch Processing */}
+          {activeTab === 'batch' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-white/90 font-medium mb-2">Wörter (ein Wort pro Zeile):</label>
+                <textarea
+                  value={batchInput}
+                  onChange={(e) => setBatchInput(e.target.value)}
+                  placeholder="geben&#10;nehmen&#10;lernen&#10;kühlschrank&#10;vergeben"
+                  rows={8}
+                  className="w-full px-4 py-3 bg-white/10 border border-white/30 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={processBatch} className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 rounded-lg transition-all">
+                  Batch Verarbeiten
+                </button>
+                {batchResults.length > 0 && (
+                  <>
+                    <button onClick={exportToCSV} className="px-4 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-all">
+                      <Download className="w-5 h-5" />
+                    </button>
+                    <button onClick={exportToJSON} className="px-4 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-all">
+                      <Code className="w-5 h-5" />
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {batchResults.length > 0 && (
+                <div className="mt-6 bg-white/5 rounded-lg border border-white/10 overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-white/10">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-white">Wort</th>
+                        <th className="px-3 py-2 text-center text-white">Typ</th>
+                        <th className="px-3 py-2 text-center text-green-300">P₀</th>
+                        <th className="px-3 py-2 text-center text-blue-300">P₁</th>
+                        <th className="px-3 py-2 text-center text-yellow-300">P₂</th>
+                        <th className="px-3 py-2 text-center text-purple-300">P₃</th>
+                        <th className="px-4 py-2 text-left text-white">Code</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {batchResults.map((r, i) => (
+                        <tr key={i} className="border-t border-white/10">
+                          {r.error ? (
+                            <td colSpan={7} className="px-4 py-2 text-red-300">{r.word} - {r.error}</td>
+                          ) : r.isCompound ? (
+                            <>
+                              <td className="px-4 py-2 text-white font-medium">{r.word}</td>
+                              <td className="px-3 py-2 text-center text-green-300 text-xs">Kompositum</td>
+                              <td colSpan={5} className="px-4 py-2 text-cyan-300 text-xs">
+                                {r.parts.join(' + ')}
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-4 py-2 text-white font-medium">{r.word}</td>
+                              <td className="px-3 py-2 text-center">
+                                {r.irregular ? <span className="text-yellow-300 text-xs">unreg.</span> : <span className="text-white/50 text-xs">reg.</span>}
+                              </td>
+                              <td className="px-3 py-2 text-center text-green-300">{r.structure.p0.code}</td>
+                              <td className="px-3 py-2 text-center text-blue-300">{r.structure.p1.code}</td>
+                              <td className="px-3 py-2 text-center text-yellow-300">{r.structure.p2.vowel.code}</td>
+                              <td className="px-3 py-2 text-center text-purple-300">{r.structure.p3.code}</td>
+                              <td className="px-4 py-2 text-cyan-300 font-mono text-xs">{r.compact}</td>
+                            </>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Variant Generator */}
+          {activeTab === 'variants' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-white/90 font-medium mb-2">Wortstamm eingeben:</label>
+                <input
+                  type="text"
+                  value={word}
+                  onChange={(e) => setWord(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && setResult(generateVariants(word))}
+                  placeholder="z.B. lern, geb, nehm..."
+                  className="w-full px-4 py-3 bg-white/10 border border-white/30 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+              <button onClick={() => setResult(generateVariants(word))} className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 rounded-lg transition-all">
+                Varianten Generieren
+              </button>
+
+              {result && result.variants && (
+                <div className="mt-6 space-y-4">
+                  {result.irregular && (
+                    <div className="bg-yellow-500/20 border border-yellow-500/50 p-4 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="w-5 h-5 text-yellow-300" />
+                        <span className="text-yellow-300 font-semibold">Unregelmäßiges Verb - Vokalwechsel beachten!</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="bg-white/5 rounded-lg border border-white/10 overflow-x-auto">
+                    <div className="p-4 bg-white/10 border-b border-white/10">
+                      <div className="text-white font-semibold">Stamm: <span className="text-blue-300">{result.stem}</span></div>
+                      <div className="text-white/70 text-sm">Basis-Code: <span className="font-mono text-cyan-300">{result.baseCode}</span></div>
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead className="bg-white/10">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-white">Form</th>
+                          <th className="px-4 py-2 text-left text-white">Wort</th>
+                          <th className="px-4 py-2 text-center text-purple-300">Endung</th>
+                          <th className="px-4 py-2 text-center text-white">P₃-Code</th>
+                          <th className="px-4 py-2 text-left text-white/70">Hinweis</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.variants.map((v, i) => (
+                          <tr key={i} className="border-t border-white/10 hover:bg-white/5">
+                            <td className="px-4 py-2 text-white/70">{v.form}</td>
+                            <td className="px-4 py-2 text-white font-medium">{v.word}</td>
+                            <td className="px-4 py-2 text-center text-purple-300 font-mono">{v.ending}</td>
+                            <td className="px-4 py-2 text-center text-cyan-300 font-mono">{v.code}</td>
+                            <td className="px-4 py-2 text-yellow-300 text-xs">{v.note || ''}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Search Function */}
+          {activeTab === 'search' && (
+            <div className="space-y-4">
+              <div className="bg-white/5 p-4 rounded-lg border border-white/10">
+                <h3 className="text-white font-semibold mb-3">Nach Muster suchen:</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div>
+                    <label className="text-white/70 text-xs mb-1 block">P₀ (Präfix)</label>
+                    <input
+                      type="text"
+                      value={searchQuery.p0}
+                      onChange={(e) => setSearchQuery({ ...searchQuery, p0: e.target.value })}
+                      placeholder="z.B. 4"
+                      className="w-full px-3 py-2 bg-white/10 border border-white/30 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-white/70 text-xs mb-1 block">P₁ (Anfang)</label>
+                    <input
+                      type="text"
+                      value={searchQuery.p1}
+                      onChange={(e) => setSearchQuery({ ...searchQuery, p1: e.target.value })}
+                      placeholder="z.B. 4"
+                      className="w-full px-3 py-2 bg-white/10 border border-white/30 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-white/70 text-xs mb-1 block">P₂ (Vokal)</label>
+                    <input
+                      type="text"
+                      value={searchQuery.p2}
+                      onChange={(e) => setSearchQuery({ ...searchQuery, p2: e.target.value })}
+                      placeholder="z.B. 1"
+                      className="w-full px-3 py-2 bg-white/10 border border-white/30 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-white/70 text-xs mb-1 block">P₃ (Endung)</label>
+                    <input
+                      type="text"
+                      value={searchQuery.p3}
+                      onChange={(e) => setSearchQuery({ ...searchQuery, p3: e.target.value })}
+                      placeholder="z.B. 10"
+                      className="w-full px-3 py-2 bg-white/10 border border-white/30 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <button onClick={performSearch} className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 rounded-lg transition-all flex items-center justify-center gap-2">
+                <Search className="w-5 h-5" />
+                Suchen
+              </button>
+
+              {searchResults.length > 0 && (
+                <div className="mt-6 bg-white/5 rounded-lg border border-white/10">
+                  <div className="p-4 bg-white/10 border-b border-white/10">
+                    <div className="text-white font-semibold">{searchResults.length} Ergebnisse gefunden</div>
+                  </div>
+                  <div className="p-4 space-y-2">
+                    {searchResults.map((item, i) => (
+                      <div key={i} className="bg-white/5 p-3 rounded border border-white/10 hover:bg-white/10 transition-all">
+                        <div className="flex justify-between items-center">
+                          <div className="text-white font-medium text-lg">{item.word}</div>
+                          <div className="text-cyan-300 font-mono text-sm">[{item.codes.join(', ')}]</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-blue-500/20 border border-blue-500/50 p-4 rounded-lg">
+                <h4 className="text-blue-300 font-semibold mb-2">Beispiel-Suchen:</h4>
+                <div className="space-y-2 text-sm text-white/80">
+                  <div>• P₁=4, P₃=10 → Alle Wörter die mit "G" beginnen und auf "-en" enden</div>
+                  <div>• P₀=4 → Alle Wörter mit Präfix "ver-"</div>
+                  <div>• P₃=20 → Alle Substantive auf "-ung"</div>
+                  <div>• Leer lassen = alle Werte erlaubt (Wildcard)</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Examples */}
+          <div className="mt-8">
+            <div className="flex items-center gap-2 mb-4">
+              <Book className="w-5 h-5 text-white/70" />
+              <h3 className="text-white/90 font-semibold">Neue Beispiele:</h3>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {examples.map((ex, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setWord(ex.word)}
+                  className="bg-white/5 hover:bg-white/10 p-3 rounded-lg transition-all border border-white/10 hover:border-white/30 text-left"
+                >
+                  <div className="text-white font-medium">{ex.word}</div>
+                  <div className="text-white/50 text-xs mt-1">{ex.note}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* New Features Info */}
+          <div className="mt-8 p-4 bg-gradient-to-r from-green-500/20 to-purple-500/20 rounded-lg border border-white/20">
+            <h4 className="text-white font-semibold mb-3">🆕 Neue Features:</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-white/80">
+              <div>
+                <div className="text-green-300 font-semibold">✓ Erweiterung 1: Komposita-Zerlegung</div>
+                <div className="text-xs text-white/60">"Kühlschrank" → ["kühl", "schrank"]</div>
+              </div>
+              <div>
+                <div className="text-yellow-300 font-semibold">✓ Erweiterung 2: Unregelmäßige Verben</div>
+                <div className="text-xs text-white/60">Automatische Vokalwechsel-Erkennung</div>
+              </div>
+              <div>
+                <div className="text-blue-300 font-semibold">✓ Erweiterung 3: Export-Funktionen</div>
+                <div className="text-xs text-white/60">CSV & JSON Download verfügbar</div>
+              </div>
+              <div>
+                <div className="text-purple-300 font-semibold">✓ Erweiterung 4: Suchfunktion</div>
+                <div className="text-xs text-white/60">Wörter nach Code-Mustern finden</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default GermanWordCodec;
